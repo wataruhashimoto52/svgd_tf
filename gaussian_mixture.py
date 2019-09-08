@@ -16,6 +16,11 @@ def get_pairwise_dist(x):
 
 
 def get_median(x, h):
+    """
+    lower = tfp.stats.percentile(x, 50.0, interpolation='lower')
+    higher = tfp.stats.percentile(x, 50.0, interpolation='higher')
+    median = (lower + higher) / 2
+    """
     v = tf.reshape(v, [-1])
     m = v.get_shape()[0] // 2
     median = tf.nn.top_k(v, m).values[m-1]
@@ -49,8 +54,6 @@ def get_svgd_kernel(X0):
     
 
     return tf.exp(-H / h ** 2 / 2.0)
-
-
     
     
 @tf.function
@@ -70,10 +73,43 @@ def get_phi(samples, lnprob, num_particles, dim, h=1.0):
     return operation / num_particles
 
 
+def animate_another(i, all_samples, true_samples):
+    plt.cla()
+    x = true_samples[:, 0].numpy()
+    y = true_samples[:, 1].numpy()
+    # Define the borders
+    deltaX = (max(x) - min(x))/10
+    deltaY = (max(y) - min(y))/10
+    xmin = min(x) - deltaX
+    xmax = max(x) + deltaX
+    ymin = min(y) - deltaY
+    ymax = max(y) + deltaY
+    # Create meshgrid
+    xx, yy = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+    positions = np.vstack([xx.ravel(), yy.ravel()])
+    values = np.vstack([x, y])
+    kernel = gaussian_kde(values)
+    f = np.reshape(kernel(positions).T, xx.shape)    
+    ax = fig.gca()
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    cfset = ax.contourf(xx, yy, f, cmap='summer', alpha=0.7)
+    ax.scatter(all_samples[i][:, 0].numpy(),
+               all_samples[i][:, 1].numpy(),
+               marker="o",
+               c="black")
+    ax.imshow(np.rot90(f), cmap='coolwarm', extent=[xmin, xmax, ymin, ymax])
+    cset = ax.contour(xx, yy, f, colors='k')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    plt.title('Particle Dynamics with SVGD')
+
+    
+
 if __name__ == "__main__":
     eps = 0.1
     num_particles = 400
-    num_iter = 200
+    num_iter = 400
     dim = 2
 
     tfd = tfp.distributions
@@ -89,35 +125,23 @@ if __name__ == "__main__":
                                             scale_diag=tf.constant([2., 2.]))
 
     samples = q_init.sample(num_particles)
+    
+    true_samples = gmm.sample(num_particles)
 
     fig = plt.figure(figsize=(5, 5))
     ax = fig.add_subplot()
-
-    artists = []
+    
+    all_samples = []
 
     for i in range(num_iter):
         
         grads = get_phi(samples, gmm.log_prob, num_particles, dim)
         samples = samples + eps * grads
-
-        artist = ax.scatter(samples[:, 0].numpy(),
-                            samples[:, 1].numpy(),
-                            marker="o",
-                            c="b")
-
-        ax.set_xlabel('$x_0$')
-        ax.set_ylabel('$x_1$')
-        ax.set_aspect('equal', 'box')
-        ax.set_xlim(-7, 7)
-        ax.set_xlim(-7, 7)
+        all_samples.append(samples)
         
-        artists.append([artist])
-        
-        
-    ani = animation.ArtistAnimation(fig,
-                                    artists,
-                                    interval=100,
-                                    blit=True
-                                    )
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot()
 
+    ani = animation.FuncAnimation(fig, animate_another, fargs=(all_samples, true_samples),
+                                  interval=100, frames=num_iterations)
     ani.save("svgd_gmm.gif", writer="imagemagick", fps=15)
