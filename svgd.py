@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
@@ -11,16 +10,14 @@ class SVGD(object):
         self.vars_list = vars_list
         self.optimizer = optimizer
         self.num_particles = len(vars_list)
-        self.update_op = self.build_optimizer()
 
-    def _get_svgd_kernel(self, flatvars_list):
-        stacked_vars = tf.stack(flatvars_list)
-        norm = tf.reduce_sum(stacked_vars*stacked_vars, 1)
-        norm = tf.reshape(norm, [-1, 1])
-        pairwise_dists = norm - 2 * \
-            tf.matmul(stacked_vars, tf.transpose(
-                stacked_vars)) + tf.transpose(norm)
+    def get_pairwise_dist(self, x):
+        norm = tf.reshape(tf.reduce_sum(x * x, 1), [-1, 1])
+        return norm - 2 * tf.matmul(x, tf.transpose(x)) + tf.transpose(norm)
 
+    def _get_svgd_kernel(self, X):
+        stacked_vars = tf.stack(X)
+        pairwise_dists = self.get_pairwise_dist(stacked_vars)
         lower = tfp.stats.percentile(
             pairwise_dists, 50.0, interpolation='lower')
         higher = tfp.stats.percentile(
@@ -28,57 +25,49 @@ class SVGD(object):
 
         median = (lower + higher) / 2
         median = tf.cast(median, tf.float32)
-        h = tf.sqrt(0.5 * median / tf.math.log(len(flatvars_list) + 1.))
+        h = tf.sqrt(0.5 * median / tf.math.log(len(X) + 1.))
         h = tf.stop_gradient(h)
 
-        if len(flatvars_list) == 1:
-            h = 1.
-
         # kernel computation
-        Kxy = tf.exp(- pairwise_dists / h ** 2 / 2)
-        dxkxy = - tf.matmul(Kxy, stacked_vars)
+        Kxy = tf.exp(-pairwise_dists / h ** 2 / 2)
+        dxkxy = -tf.matmul(Kxy, stacked_vars)
         sumkxy = tf.reduce_sum(Kxy, axis=1, keepdims=True)
 
         # analytical kernel gradient
         dxkxy = (dxkxy + stacked_vars * sumkxy) / tf.pow(h, 2)
 
-        return (Kxy, dxkxy)
+        return Kxy, dxkxy
 
     def get_num_elements(self, var):
         return int(np.prod(self.var_shape(var)))
 
-    def flatten_grads_and_vars(self, grads, vars):
+    def flatten_grads_and_vars(self, grads, variables):
         # from openai/baselines/common/tf_util.py
         flatgrads = tf.concat(axis=0, values=[
-            tf.reshape(grad if grad is not None else tf.zeros_like(
-                var), [self.get_num_elements(var)])
-            for (var, grad) in zip(vars, grads)])
+            tf.reshape(grad if grad is not None else tf.zeros_like(var), [self.get_num_elements(var)]) for (var, grad) in zip(variables, grads)])
         flatvars = tf.concat(axis=0, values=[
-            tf.reshape(var, [self.get_num_elements(var)])
-            for var in vars])
+            tf.reshape(var, [self.get_num_elements(var)])for var in variables])
         return flatgrads, flatvars
 
-    @staticmethod
-    def var_shape(var):
+    def var_shape(self, var):
         out = var.get_shape().as_list()
-        assert all(isinstance(a, int) for a in out), \
-            'shape function assumes that shape is fully known'
         return out
 
-    def build_optimizer(self):
+    def run(self):
         flatgrads_list, flatvars_list = [], []
 
-        for grads, vars in zip(self.grads_list, self.vars_list):
-            flatgrads, flatvars = self.flatten_grads_and_vars(grads, vars)
+        for grads, variables in zip(self.grads_list, self.vars_list):
+            flatgrads, flatvars = self.flatten_grads_and_vars(grads, variables)
             flatgrads_list.append(flatgrads)
             flatvars_list.append(flatvars)
 
         Kxy, dxkxy = self._get_svgd_kernel(flatvars_list)
         stacked_grads = tf.stack(flatgrads_list)
-        stacked_grads = (tf.matmul(Kxy, stacked_grads) +
+        stacked_grads = (tf.matmul(Kxy, stacked_grads) -
                          dxkxy) / self.num_particles
         flatgrads_list = tf.unstack(stacked_grads, self.num_particles)
 
+        # align index
         grads_list = []
         for flatgrads, variables in zip(flatgrads_list, self.vars_list):
             start = 0
@@ -86,18 +75,14 @@ class SVGD(object):
 
             for var in variables:
                 shape = self.var_shape(var)
-                size = int(np.prod(shape))
-
-                end = start + size
+                end = start + int(np.prod(self.var_shape(var)))
                 grads.append(tf.reshape(flatgrads[start:end], shape))
                 start = end
 
             grads_list.append(grads)
 
-        update_ops = []
         for grads, variables in zip(grads_list, self.vars_list):
-            opt = self.optimizer
-            update_ops.append(opt.apply_gradients(
-                [(-g, v) for g, v in zip(grads, variables)]))
+            self.optimizer.apply_gradients(
+                [(-grad, var) for grad, var in zip(grads, variables)])
 
-        return tf.group(*update_ops)
+        return

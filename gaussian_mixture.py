@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from IPython.display import HTML
+from scipy.stats import gaussian_kde
 
 import tensorflow_probability as tfp
 
@@ -138,5 +139,5 @@ if __name__ == "__main__":
     ax = fig.add_subplot()
 
     ani = animation.FuncAnimation(fig, animate_another, fargs=(all_samples, true_samples),
-                                  interval=100, frames=num_iterations)
+                                  interval=100, frames=num_iter)
     ani.save("svgd_gmm.gif", writer="imagemagick", fps=15)

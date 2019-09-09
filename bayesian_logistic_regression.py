@@ -2,33 +2,34 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
+import tensorflow_probability as tfp
 from svgd import SVGD
 
 
-def generate_data(n_samples, test_size=0.25):
-    num0 = n_samples // 2
-    num1 = 400 - num0
+def get_toy_data_2d(n_samples=400, test_size=0.25):
+    n_class0 = n_samples // 2
+    n_class1 = n_samples - n_class0
 
-    mean0 = np.array([-1, -1])
-    std0 = np.array([0.25, 0.25])
-    mean1 = np.array([1, 1])
-    std1 = np.array([1.5, 1.5])
+    class0_dist = tfp.distributions.MultivariateNormalDiag(loc=tf.constant([-1., -1.]),
+                                                           scale_diag=tf.constant([0.25, 0.25]))
+    class1_dist = tfp.distributions.MultivariateNormalDiag(loc=tf.constant([1., 1.]),
+                                                           scale_diag=tf.constant([1.5, 1.5]))
 
-    x0 = np.tile(mean0, (num0, 1)) + std0 * np.random.randn(num0, 2)
-    x1 = np.tile(mean1, (num1, 1)) + std1 * np.random.randn(num1, 2)
-    y0 = np.zeros((x0.shape[0], 1))
-    y1 = np.ones((x1.shape[0], 1))
+    class0_samples = class0_dist.sample(n_class0)
+    y0 = tf.zeros((n_class0, 1))
+    class1_samples = class1_dist.sample(n_class1)
+    y1 = tf.ones((n_class1, 1))
 
-    x = np.concatenate([x0, x1], axis=0)
-    y = np.concatenate([y0, y1], axis=0)
-    D = np.hstack([x, y])
-    np.random.shuffle(D)
-    x = np.array(D[:, 0:2], dtype=np.float32)
-    y = np.array(D[:, 2:], dtype=np.float32)
-    train_size = int(n_samples * test_size)
-    X_train = x[:train_size]
+    X = tf.concat([class0_samples, class1_samples], axis=0)
+    y = tf.concat([y0, y1], axis=0)
+    data = tf.concat([X, y], axis=1)
+    data = tf.random.shuffle(data, seed=123)
+    X = data[:, 0:2].numpy().astype(np.float32)
+    y = data[:, 2:].numpy().astype(np.float32)
+    train_size = int(n_samples * (1 - test_size))
+    X_train = X[:train_size]
     y_train = y[:train_size]
-    X_test = x[train_size:]
+    X_test = X[train_size:]
     y_test = y[train_size:]
 
     return X_train, X_test, y_train, y_test
@@ -56,11 +57,10 @@ def predict(inputs, model):
 if __name__ == "__main__":
 
     N = 400
-    D = 2
-    num_particles = 20
-    num_iterations = 100
+    num_particles = 100
+    num_iterations = 250
 
-    X_train, X_test, y_train, y_test = generate_data(
+    X_train, X_test, y_train, y_test = get_toy_data_2d(
         n_samples=N, test_size=0.25)
 
     grad_optimizer = tf.optimizers.Adagrad(learning_rate=0.05)
@@ -68,7 +68,10 @@ if __name__ == "__main__":
     # initialization
     models = []
     for i in range(num_particles):
-        models.append(tf.keras.layers.Dense(1))
+        models.append(tf.keras.layers.Dense(1,
+                                            kernel_initializer=tf.keras.initializers.RandomNormal(
+                                                mean=0.0, stddev=0.8),
+                                            bias_initializer=tf.keras.initializers.RandomNormal(mean=0.0, stddev=0.8)))
 
     # train
     for _ in range(num_iterations):
@@ -81,10 +84,10 @@ if __name__ == "__main__":
             vars_list.append(variables)
             prob_1_x_w_list.append(prob_1_x_w)
 
-        optimizer = SVGD(grads_list=grads_list,
-                         vars_list=vars_list,
-                         optimizer=grad_optimizer)
-        optimizer.update_op
+        svgd = SVGD(grads_list=grads_list,
+                    vars_list=vars_list,
+                    optimizer=grad_optimizer)
+        svgd.run()
 
     # evaluation
     # train
@@ -122,16 +125,14 @@ if __name__ == "__main__":
                          cmap=plt.cm.coolwarm, zorder=0)
     x0, x1 = X_train[np.where(y_train[:, 0] == 0)
                      ], X_train[np.where(y_train[:, 0] == 1)]
-    ax.scatter(x0[:, 0], x0[:, 1], s=1, c='blue', zorder=1)
-    ax.scatter(x1[:, 0], x1[:, 1], s=1, c='red', zorder=2)
+    ax.scatter(x0[:, 0], x0[:, 1], s=5, c='blue', zorder=1)
+    ax.scatter(x1[:, 0], x1[:, 1], s=5, c='red', zorder=2)
 
-    ax.set_title('$p(1|(x_0, x_1))$ with {} ({} particles)'.format(
-        "svgd", num_particles))
-    ax.set_xlabel('$x_0$')
-    ax.set_ylabel('$x_1$')
+    ax.set_title("Bayesian Logistic Regression with SVGD")
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
     ax.set_xlim(-5, 5)
     ax.set_ylim(-5, 5)
     ax.set_aspect('equal', 'box')
-    ax.grid(b=True)
     fig.colorbar(contour)
     plt.savefig("blr_result.png")
