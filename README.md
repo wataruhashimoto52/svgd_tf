@@ -1,7 +1,7 @@
 # Stein Variational Gradient Descent
 
 ## Description
-Implementation of Stein Variational Gradient Descent with TensorFlow.
+Implementation of Stein Variational Gradient Descent with TensorFlow 2.0
 
   
 ## Requirements
@@ -10,8 +10,9 @@ Implementation of Stein Variational Gradient Descent with TensorFlow.
 
 
 ## Contents
-* `gaussian_mixture.py` - Transformation initial samples to Gaussian mixture.
-* `bayesian_logistic_regression.py` - Logistic regression with uncertainty.
+* `gaussian_mixture.py` - Transformation initial samples to Gaussian mixture using SVGD.
+* `bayesian_logistic_regression.py` - Bayesian Logistic Regression with SVGD.
+* `tfp_bayesian_logistic_regression.py` - Bayesian Logistic Regression with Mean-Field Variational Inference.
 
 
 ## Reference
