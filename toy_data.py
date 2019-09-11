@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+
 import tensorflow_probability as tfp
 
 
@@ -8,9 +9,9 @@ def get_toy_data_2d(n_samples=400, test_size=0.25):
     n_class1 = n_samples - n_class0
 
     class0_dist = tfp.distributions.MultivariateNormalDiag(loc=tf.constant([-1., -1.]),
-                                                               scale_diag=tf.constant([0.25, 0.25]))
+                                                           scale_diag=tf.constant([0.25, 0.25]))
     class1_dist = tfp.distributions.MultivariateNormalDiag(loc=tf.constant([1., 1.]),
-                                                               scale_diag=tf.constant([1.5, 1.5]))
+                                                           scale_diag=tf.constant([1.5, 1.5]))
 
     class0_samples = class0_dist.sample(n_class0)
     y0 = tf.zeros((n_class0, 1))

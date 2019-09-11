@@ -41,10 +41,12 @@ class SVGD(object):
     def get_num_elements(self, var):
         return int(np.prod(self.var_shape(var)))
 
-    def flatten_grads_and_vars(self, grads, variables):
+    def _flatten(self, grads, variables):
         # from openai/baselines/common/tf_util.py
         flatgrads = tf.concat(axis=0, values=[
-            tf.reshape(grad if grad is not None else tf.zeros_like(var), [self.get_num_elements(var)]) for (var, grad) in zip(variables, grads)])
+            tf.reshape(grad if grad is not None else tf.zeros_like(
+                v), [self.get_num_elements(v)])
+            for (v, grad) in zip(variables, grads)])
         flatvars = tf.concat(axis=0, values=[
             tf.reshape(var, [self.get_num_elements(var)])for var in variables])
         return flatgrads, flatvars
@@ -54,21 +56,22 @@ class SVGD(object):
         return out
 
     def run(self):
-        flatgrads_list, flatvars_list = [], []
+        all_flatgrads = []
+        all_flatvars = []
 
         for grads, variables in zip(self.grads_list, self.vars_list):
-            flatgrads, flatvars = self.flatten_grads_and_vars(grads, variables)
-            flatgrads_list.append(flatgrads)
-            flatvars_list.append(flatvars)
+            flatgrads, flatvars = self._flatten(grads, variables)
+            all_flatgrads.append(flatgrads)
+            all_flatvars.append(flatvars)
 
-        Kxy, dxkxy = self._get_svgd_kernel(flatvars_list)
-        stacked_grads = tf.stack(flatgrads_list)
-        stacked_grads = (tf.matmul(Kxy, stacked_grads) -
-                         dxkxy) / self.num_particles
+        Kxy, dxkxy = self._get_svgd_kernel(all_flatvars)
+        stacked_grads = tf.stack(all_flatgrads)
+        stacked_grads = tf.matmul(Kxy, stacked_grads) - dxkxy
+        stacked_grads /= self.num_particles
         flatgrads_list = tf.unstack(stacked_grads, self.num_particles)
 
         # align index
-        grads_list = []
+        all_grads = []
         for flatgrads, variables in zip(flatgrads_list, self.vars_list):
             start = 0
             grads = []
@@ -77,11 +80,12 @@ class SVGD(object):
                 shape = self.var_shape(var)
                 end = start + int(np.prod(self.var_shape(var)))
                 grads.append(tf.reshape(flatgrads[start:end], shape))
+                # next
                 start = end
 
-            grads_list.append(grads)
+            all_grads.append(grads)
 
-        for grads, variables in zip(grads_list, self.vars_list):
+        for grads, variables in zip(all_grads, self.vars_list):
             self.optimizer.apply_gradients(
                 [(-grad, var) for grad, var in zip(grads, variables)])
 

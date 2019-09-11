@@ -1,9 +1,8 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
+
 import tensorflow_probability as tfp
-
-
 from svgd import SVGD
 from toy_data import get_toy_data_2d
 
@@ -23,7 +22,7 @@ def inference(inputs, labels, model):
 def predict(inputs, model):
     logits = model(inputs)
     prob_1_x_w = tf.nn.sigmoid(logits)
-    
+
     return logits, prob_1_x_w
 
 
@@ -33,8 +32,8 @@ if __name__ == "__main__":
     num_particles = 100
     num_iterations = 250
 
-
-    X_train, X_test, y_train, y_test = get_toy_data_2d(n_samples=N, test_size=0.25)
+    X_train, X_test, y_train, y_test = get_toy_data_2d(
+        n_samples=N, test_size=0.25)
 
     grad_optimizer = tf.optimizers.Adagrad(learning_rate=0.05)
 
@@ -42,15 +41,17 @@ if __name__ == "__main__":
     models = []
     for i in range(num_particles):
         models.append(tf.keras.layers.Dense(1,
-                kernel_initializer=tf.keras.initializers.RandomNormal(mean=0.0, stddev=0.8),
-                bias_initializer=tf.keras.initializers.RandomNormal(mean=0.0, stddev=0.8)))
+                                            kernel_initializer=tf.keras.initializers.RandomNormal(
+                                                mean=0.0, stddev=0.8),
+                                            bias_initializer=tf.keras.initializers.RandomNormal(mean=0.0, stddev=0.8)))
 
     # train
     for _ in range(num_iterations):
         grads_list, vars_list, prob_1_x_w_list = [], [], []
-        
+
         for i in range(num_particles):
-            grads, variables, prob_1_x_w = inference(X_train, y_train, models[i])
+            grads, variables, prob_1_x_w = inference(
+                X_train, y_train, models[i])
             grads_list.append(grads)
             vars_list.append(variables)
             prob_1_x_w_list.append(prob_1_x_w)
@@ -60,26 +61,23 @@ if __name__ == "__main__":
                     optimizer=grad_optimizer)
         svgd.run()
 
-
     # evaluation
-    ## train
+    # train
     prob_train_x = tf.reduce_mean(tf.stack(prob_1_x_w_list), axis=0)
     classification = prob_train_x.numpy() > 0.5
     accuracy = np.sum(classification == y_train) / y_train.shape[0]
     print("train accuracy score: {:.2f}".format(accuracy))
 
-
-    ## test
+    # test
     prob_test_list = []
     for i in range(num_particles):
         _, prob_test = predict(X_test, models[i])
         prob_test_list.append(prob_test)
-        
+
     prob_test_x = tf.reduce_mean(tf.stack(prob_test_list), axis=0)
     classification = prob_test_x.numpy() > 0.5
     accuracy = np.sum(classification == y_test) / y_test.shape[0]
     print("test accuracy score: {:.2f}".format(accuracy))
-    
 
     fig = plt.figure(figsize=(5, 5))
     ax = fig.add_subplot(111)
@@ -95,8 +93,10 @@ if __name__ == "__main__":
     probs = tf.reduce_mean(tf.stack(prob_grids), axis=0)
     probs = probs.numpy().reshape(x0_grid.shape)
 
-    contour = ax.contour(x0_grid, x1_grid, probs, 50, cmap=plt.cm.coolwarm, zorder=0)
-    x0, x1 = X_train[np.where(y_train[:, 0] == 0)], X_train[np.where(y_train[:, 0] == 1)]
+    contour = ax.contour(x0_grid, x1_grid, probs, 50,
+                         cmap=plt.cm.coolwarm, zorder=0)
+    x0, x1 = X_train[np.where(y_train[:, 0] == 0)
+                     ], X_train[np.where(y_train[:, 0] == 1)]
     ax.scatter(x0[:, 0], x0[:, 1], s=5, c='blue', zorder=1)
     ax.scatter(x1[:, 0], x1[:, 1], s=5, c='red', zorder=2)
 
